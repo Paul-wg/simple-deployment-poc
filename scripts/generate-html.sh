@@ -33,13 +33,13 @@ cat > index.html <<EOF
     </style>
 </head>
 <body>
-    <h1> Simple Deployment POC to verify CI/CD</h1>
+    <h1>Simple Deployment POC to verify CI/CD</h1>
     <h2>I am ${ENV_NAME} at ${BUILD_TIME}!</h2>
     <p>Environment: ${ENV_NAME}</p>
     <p>Build Time: ${BUILD_TIME}</p>
     
     <div class="workflow">
-        <h3>📋 Deployment Workflow</h3>
+        <h3>Deployment Workflow</h3>
         <ol>
             <li>Terraform builds AWS infrastructure</li>
             <li>Git commit/push code to GitHub</li>
