@@ -121,7 +121,7 @@ jobs:
       - name: Get EIP Allocation ID
         run: |
           EIP_ALLOC=$(aws ec2 describe-addresses \
-            --filters "Name=tag:name,Values=Nebulas-host" \
+            --filters "Name=tag:Name,Values=ai-steven-dev-eip" \
             --query "Addresses[0].AllocationId" \
             --output text \
             --region ${{ env.AWS_REGION }})
