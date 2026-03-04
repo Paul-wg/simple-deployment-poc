@@ -31,27 +31,28 @@ jobs:
           
           case $BRANCH_NAME in
             wg)
-              echo "ENV_NAME=wg" >> $GITHUB_ENV
+              ENV_NAME=wg
               echo "EC2_HOST=3.x.x.1" >> $GITHUB_ENV
               echo "EIP_ALLOC=eipalloc-wg-xxxxx" >> $GITHUB_ENV
               echo "INSTANCE_ID=i-wg-xxxxx" >> $GITHUB_ENV
               ;;
             steven)
-              echo "ENV_NAME=steven" >> $GITHUB_ENV
+              ENV_NAME=steven
               echo "EC2_HOST=3.x.x.2" >> $GITHUB_ENV
               echo "EIP_ALLOC=eipalloc-steven-xxxxx" >> $GITHUB_ENV
               echo "INSTANCE_ID=i-steven-xxxxx" >> $GITHUB_ENV
               ;;
             main)
-              echo "ENV_NAME=prod" >> $GITHUB_ENV
+              ENV_NAME=prod
               echo "EC2_HOST=3.x.x.3" >> $GITHUB_ENV
               echo "EIP_ALLOC=eipalloc-prod-xxxxx" >> $GITHUB_ENV
               echo "INSTANCE_ID=i-prod-xxxxx" >> $GITHUB_ENV
               ;;
           esac
           
+          echo "ENV_NAME=$ENV_NAME" >> $GITHUB_ENV
           echo "BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
-          echo "ECR_REPO=simple-poc-${ENV_NAME}" >> $GITHUB_ENV
+          echo "ECR_REPO=simple-poc-$ENV_NAME" >> $GITHUB_ENV
       
       # Step 3: Configure AWS credentials (OIDC)
       - name: Configure AWS credentials
