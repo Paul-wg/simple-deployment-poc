@@ -51,7 +51,7 @@ jobs:
           esac
           
           echo "ENV_NAME=$ENV_NAME" >> $GITHUB_ENV
-          echo "BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+          echo "BUILD_TIME=$(TZ='Australia/Melbourne' date '+%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_ENV
           echo "ECR_REPO=simple-poc-$ENV_NAME" >> $GITHUB_ENV
       
       # Step 3: Configure AWS credentials (OIDC)
