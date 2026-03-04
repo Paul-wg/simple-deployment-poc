@@ -74,7 +74,7 @@ Demonstrate a **simple automated deployment flow** from local development to AWS
                          │ Deploy to AWS
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    AWS CLOUD (us-east-2)                        │
+│                    AWS CLOUD (ap-southeast-4)                        │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  WG Environment (wg branch)                              │   │
@@ -160,12 +160,12 @@ Demonstrate a **simple automated deployment flow** from local development to AWS
 ┌─────────────────────────────────────────────────────────────────┐
 │ STEP 4: Push to Amazon ECR                                      │
 ├─────────────────────────────────────────────────────────────────┤
-│ Registry: AWS ECR (us-east-2)                                   │
+│ Registry: AWS ECR (ap-southeast-4)                                   │
 │ Action:                                                         │
 │   1. aws ecr get-login-password                                 │
 │   2. docker login to ECR                                        │
 │   3. docker tag simple-poc-wg:latest \                          │
-│      123456789.dkr.ecr.us-east-2.amazonaws.com/simple-poc-wg    │
+│      123456789.dkr.ecr.ap-southeast-4.amazonaws.com/simple-poc-wg    │
 │   4. docker push to ECR                                         │
 └─────────────────────────────────────────────────────────────────┘
                          │
@@ -183,7 +183,7 @@ Demonstrate a **simple automated deployment flow** from local development to AWS
 │      docker run -d --name simple-poc \                          │
 │        -p 80:80 \                                               │
 │        --restart unless-stopped \                               │
-│        123456789.dkr.ecr.us-east-2.amazonaws.com/simple-poc-wg  │
+│        123456789.dkr.ecr.ap-southeast-4.amazonaws.com/simple-poc-wg  │
 └─────────────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -284,12 +284,15 @@ on:
       - main
 
 env:
-  AWS_REGION: us-east-2
-  ECR_REGISTRY: 123456789.dkr.ecr.us-east-2.amazonaws.com
+  AWS_REGION: ap-southeast-4
+  ECR_REGISTRY: 119778517641.dkr.ecr.ap-southeast-4.amazonaws.com
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for OIDC
+      contents: read    # Required for checkout
     
     steps:
       # Step 1: Checkout code
@@ -326,12 +329,12 @@ jobs:
           echo "BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
           echo "ECR_REPO=simple-poc-${ENV_NAME}" >> $GITHUB_ENV
       
-      # Step 3: Configure AWS credentials
+      # Step 3: Configure AWS credentials (OIDC)
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::119778517641:role/GitHubActionsDeployRole
+          role-session-name: GitHubActions-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
       
       # Step 4: Login to Amazon ECR
@@ -413,16 +416,16 @@ jobs:
 
 **1. Create ECR Repositories:**
 ```bash
-aws ecr create-repository --repository-name simple-poc-wg --region us-east-2
-aws ecr create-repository --repository-name simple-poc-steven --region us-east-2
-aws ecr create-repository --repository-name simple-poc-prod --region us-east-2
+aws ecr create-repository --repository-name simple-poc-wg --region ap-southeast-4      --profile ai-steven
+aws ecr create-repository --repository-name simple-poc-steven --region ap-southeast-4  --profile ai-steven
+aws ecr create-repository --repository-name simple-poc-prod --region ap-southeast-4    --profile ai-steven
 ```
 
 **2. Allocate Elastic IPs:**
 ```bash
-aws ec2 allocate-address --domain vpc --region us-east-2  # For WG
-aws ec2 allocate-address --domain vpc --region us-east-2  # For Steven
-aws ec2 allocate-address --domain vpc --region us-east-2  # For Prod
+aws ec2 allocate-address --domain vpc --region ap-southeast-4  # For WG
+aws ec2 allocate-address --domain vpc --region ap-southeast-4  # For Steven
+aws ec2 allocate-address --domain vpc --region ap-southeast-4  # For Prod
 ```
 
 **3. Create IAM Role for EC2 (SSM + ECR Access):**
@@ -490,24 +493,41 @@ sudo systemctl status amazon-ssm-agent
 aws ec2 create-security-group \
   --group-name simple-poc-sg \
   --description "Simple POC Security Group" \
-  --region us-east-2
+  --region ap-southeast-4
 
 aws ec2 authorize-security-group-ingress \
   --group-name simple-poc-sg \
   --protocol tcp --port 80 --cidr 0.0.0.0/0 \
-  --region us-east-2
+  --region ap-southeast-4
 ```
 
-### 7.2 GitHub Secrets Configuration
+### 7.2 GitHub Authentication Configuration
+
+**Option 1: OIDC (Recommended - No Secrets Needed)**
+
+Setup OIDC provider and IAM role (see `doc/GITHUB_AWS_AUTH.md` for details):
+
+```bash
+# 1. Create OIDC provider
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com \
+  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+
+# 2. Create IAM role: GitHubActionsDeployRole
+# 3. Attach permissions: ECR, EC2, SSM
+```
+
+**Option 2: Access Keys (Alternative)**
 
 Add these secrets to GitHub repository settings:
 
-| Secret Name | Description | Example Value |
-|-------------|-------------|---------------|
-| AWS_ACCESS_KEY_ID | AWS IAM access key | AKIAIOSFODNN7EXAMPLE |
-| AWS_SECRET_ACCESS_KEY | AWS IAM secret key | wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY |
+| Secret Name | Description |
+|-------------|-------------|
+| AWS_ACCESS_KEY_ID | AWS IAM access key |
+| AWS_SECRET_ACCESS_KEY | AWS IAM secret key |
 
-**Note:** No SSH keys needed! SSM Session Manager uses IAM for authentication.
+**Note:** OIDC is more secure and recommended for production.
 
 ---
 
@@ -635,15 +655,15 @@ docker ps -a
 **Issue 2: Cannot pull from ECR**
 ```bash
 # Check ECR login
-aws ecr get-login-password --region us-east-2
+aws ecr get-login-password --region ap-southeast-4
 # Check IAM permissions
 ```
 
 **Issue 3: Elastic IP not associated**
 ```bash
 # Check instance ID and allocation ID
-aws ec2 describe-addresses --region us-east-2
-aws ec2 describe-instances --region us-east-2
+aws ec2 describe-addresses --region ap-southeast-4
+aws ec2 describe-instances --region ap-southeast-4
 ```
 
 **Issue 4: curl test fails**

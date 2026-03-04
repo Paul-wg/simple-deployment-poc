@@ -1,0 +1,132 @@
+name: Simple POC Deployment
+
+on:
+  push:
+    branches:
+      - wg
+      - steven
+      - main
+
+env:
+  AWS_REGION: ap-southeast-4
+  ECR_REGISTRY: 119778517641.dkr.ecr.ap-southeast-4.amazonaws.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for OIDC
+      contents: read    # Required for checkout
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      # Step 2: Determine environment based on branch
+      - name: Set environment variables
+        run: |
+          BRANCH_NAME=${GITHUB_REF##*/}
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          
+          case $BRANCH_NAME in
+            wg)
+              echo "ENV_NAME=wg" >> $GITHUB_ENV
+              echo "EC2_HOST=3.x.x.1" >> $GITHUB_ENV
+              echo "EIP_ALLOC=eipalloc-wg-xxxxx" >> $GITHUB_ENV
+              echo "INSTANCE_ID=i-wg-xxxxx" >> $GITHUB_ENV
+              ;;
+            steven)
+              echo "ENV_NAME=steven" >> $GITHUB_ENV
+              echo "EC2_HOST=3.x.x.2" >> $GITHUB_ENV
+              echo "EIP_ALLOC=eipalloc-steven-xxxxx" >> $GITHUB_ENV
+              echo "INSTANCE_ID=i-steven-xxxxx" >> $GITHUB_ENV
+              ;;
+            main)
+              echo "ENV_NAME=prod" >> $GITHUB_ENV
+              echo "EC2_HOST=3.x.x.3" >> $GITHUB_ENV
+              echo "EIP_ALLOC=eipalloc-prod-xxxxx" >> $GITHUB_ENV
+              echo "INSTANCE_ID=i-prod-xxxxx" >> $GITHUB_ENV
+              ;;
+          esac
+          
+          echo "BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+          echo "ECR_REPO=simple-poc-${ENV_NAME}" >> $GITHUB_ENV
+      
+      # Step 3: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::119778517641:role/GitHubActionsDeployRole
+          role-session-name: GitHubActions-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      # Step 4: Login to Amazon ECR
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+          docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+      
+      # Step 5: Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg ENV_NAME=${{ env.ENV_NAME }} \
+            --build-arg BUILD_TIME="${{ env.BUILD_TIME }}" \
+            -t ${{ env.ECR_REPO }}:latest \
+            -t ${{ env.ECR_REPO }}:${{ github.sha }} \
+            .
+      
+      # Step 6: Tag and push to ECR
+      - name: Push to ECR
+        run: |
+          docker tag ${{ env.ECR_REPO }}:latest \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:latest
+          
+          docker tag ${{ env.ECR_REPO }}:latest \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ github.sha }}
+          
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ github.sha }}
+      
+      # Step 7: Deploy to EC2 via SSM
+      - name: Deploy to EC2 via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ env.INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}",
+              "docker stop simple-poc || true",
+              "docker rm simple-poc || true",
+              "docker pull ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:latest",
+              "docker run -d --name simple-poc -p 80:80 --restart unless-stopped ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:latest",
+              "docker image prune -f"
+            ]' \
+            --region ${{ env.AWS_REGION }}
+      
+      # Step 8: Associate Elastic IP
+      - name: Associate Elastic IP
+        run: |
+          aws ec2 associate-address \
+            --instance-id ${{ env.INSTANCE_ID }} \
+            --allocation-id ${{ env.EIP_ALLOC }} \
+            --region ${{ env.AWS_REGION }}
+      
+      # Step 9: Verify deployment
+      - name: Verify deployment
+        run: |
+          echo "Waiting 10 seconds for container to start..."
+          sleep 10
+          
+          echo "Testing HTTP endpoint..."
+          RESPONSE=$(curl -s http://${{ env.EC2_HOST }}/)
+          
+          if echo "$RESPONSE" | grep -q "${{ env.ENV_NAME }}"; then
+            echo "✅ Deployment successful!"
+            echo "Response: $RESPONSE"
+          else
+            echo "❌ Deployment failed!"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
