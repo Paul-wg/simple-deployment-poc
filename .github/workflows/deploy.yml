@@ -90,7 +90,18 @@ jobs:
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:latest
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ github.sha }}
       
-      # Step 7: Deploy to EC2 via SSM
+      # Step 7: Get EC2 Instance ID by tag
+      - name: Get EC2 Instance ID
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:name,Values=Nebulas-host" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "Found instance: $INSTANCE_ID"
+      
+      # Step 8: Deploy to EC2 via SSM
       - name: Deploy to EC2 via SSM
         run: |
           aws ssm send-command \
@@ -106,21 +117,40 @@ jobs:
             ]' \
             --region ${{ env.AWS_REGION }}
       
-      # Step 8: Associate Elastic IP
+      # Step 9: Get EIP Allocation ID
+      - name: Get EIP Allocation ID
+        run: |
+          EIP_ALLOC=$(aws ec2 describe-addresses \
+            --filters "Name=tag:name,Values=Nebulas-host" \
+            --query "Addresses[0].AllocationId" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "EIP_ALLOC=$EIP_ALLOC" >> $GITHUB_ENV
+          echo "Found EIP allocation: $EIP_ALLOC"
+      
+      # Step 10: Associate Elastic IP
       - name: Associate Elastic IP
         run: |
           aws ec2 associate-address \
             --instance-id ${{ env.INSTANCE_ID }} \
             --allocation-id ${{ env.EIP_ALLOC }} \
             --region ${{ env.AWS_REGION }}
+          
+          EIP=$(aws ec2 describe-addresses \
+            --allocation-ids ${{ env.EIP_ALLOC }} \
+            --query "Addresses[0].PublicIp" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "EC2_HOST=$EIP" >> $GITHUB_ENV
+          echo "Associated EIP: $EIP"
       
-      # Step 9: Verify deployment
+      # Step 11: Verify deployment
       - name: Verify deployment
         run: |
           echo "Waiting 10 seconds for container to start..."
           sleep 10
           
-          echo "Testing HTTP endpoint..."
+          echo "Testing HTTP endpoint at ${{ env.EC2_HOST }}..."
           RESPONSE=$(curl -s http://${{ env.EC2_HOST }}/)
           
           if echo "$RESPONSE" | grep -q "${{ env.ENV_NAME }}"; then
