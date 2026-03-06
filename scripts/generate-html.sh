@@ -33,9 +33,9 @@ cat > index.html <<EOF
     </style>
 </head>
 <body>
-    <h1>Simple Deployment POC to verify CI/CD</h1>
-    <h2>I and Ziqiang am ${ENV_NAME} at ${BUILD_TIME}!</h2>
-    <h2>run tests with Steven Chen!!</h2>
+    <h1>Simple Deployment POC - Happy Friday!</h1>
+    <h2>I am ${ENV_NAME} at ${BUILD_TIME}!</h2>
+    <h2>Long weekend ahead - Time to relax!</h2>
     <p>Environment: ${ENV_NAME}</p>
     <p>Build Time: ${BUILD_TIME}</p>
     

@@ -17,8 +17,9 @@ RUN echo "<!DOCTYPE html>" > /usr/share/nginx/html/index.html && \
     echo ".workflow h3 { margin-top: 0; text-align: center; }" >> /usr/share/nginx/html/index.html && \
     echo ".workflow ol { line-height: 1.8; }" >> /usr/share/nginx/html/index.html && \
     echo "</style></head><body>" >> /usr/share/nginx/html/index.html && \
-    echo "<h1>Simple Deployment POC</h1>" >> /usr/share/nginx/html/index.html && \
+    echo "<h1>Simple Deployment POC - Happy Friday!</h1>" >> /usr/share/nginx/html/index.html && \
     echo "<h2>I am ${ENV_NAME} at ${BUILD_TIME}!</h2>" >> /usr/share/nginx/html/index.html && \
+    echo "<h2>Long weekend ahead - Time to relax!</h2>" >> /usr/share/nginx/html/index.html && \
     echo "<p>Environment: ${ENV_NAME}</p>" >> /usr/share/nginx/html/index.html && \
     echo "<p>Build Time: ${BUILD_TIME}</p>" >> /usr/share/nginx/html/index.html && \
     echo "<div class='workflow'><h3>Deployment Workflow</h3><ol>" >> /usr/share/nginx/html/index.html && \
