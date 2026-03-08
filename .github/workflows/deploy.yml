@@ -101,10 +101,10 @@ jobs:
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
           echo "Found instance: $INSTANCE_ID"
       
-      # Step 8: Deploy to EC2 via SSM
+      # Step 8: Deploy to EC2 via SSM (wait for command to complete)
       - name: Deploy to EC2 via SSM
         run: |
-          aws ssm send-command \
+          CMD_ID=$(aws ssm send-command \
             --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=[
@@ -115,9 +115,55 @@ jobs:
               "docker run -d --name simple-poc -p 80:80 --restart unless-stopped ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:latest",
               "docker image prune -f"
             ]' \
-            --region ${{ env.AWS_REGION }}
-      
-      # Step 9: Get EIP Allocation ID
+            --region ${{ env.AWS_REGION }} \
+            --query "Command.CommandId" \
+            --output text)
+          echo "SSM Command ID: $CMD_ID"
+
+          # Wait for SSM command to complete (max 3 minutes)
+          for i in $(seq 1 18); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" \
+              --instance-id ${{ env.INSTANCE_ID }} \
+              --region ${{ env.AWS_REGION }} \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            echo "Attempt $i: SSM status = $STATUS"
+            if [ "$STATUS" = "Success" ]; then
+              echo "✅ SSM command completed successfully"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "❌ SSM command failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 10
+          done
+
+      # Step 9: Verify container is running via SSM (before exposing via EIP)
+      - name: Verify container health via SSM
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids ${{ env.INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["curl -sf http://localhost/ || exit 1"]' \
+            --region ${{ env.AWS_REGION }} \
+            --query "Command.CommandId" \
+            --output text)
+
+          sleep 15
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id ${{ env.INSTANCE_ID }} \
+            --region ${{ env.AWS_REGION }} \
+            --query "Status" --output text)
+
+          if [ "$STATUS" = "Success" ]; then
+            echo "✅ Container is healthy on EC2"
+          else
+            echo "❌ Container health check failed (status: $STATUS)"
+            exit 1
+          fi
+
+      # Step 10: Get EIP Allocation ID
       - name: Get EIP Allocation ID
         run: |
           EIP_ALLOC=$(aws ec2 describe-addresses \
@@ -127,15 +173,16 @@ jobs:
             --region ${{ env.AWS_REGION }})
           echo "EIP_ALLOC=$EIP_ALLOC" >> $GITHUB_ENV
           echo "Found EIP allocation: $EIP_ALLOC"
-      
-      # Step 10: Associate Elastic IP
+
+      # Step 11: Associate Elastic IP (only after container is verified healthy)
       - name: Associate Elastic IP
         run: |
           aws ec2 associate-address \
             --instance-id ${{ env.INSTANCE_ID }} \
             --allocation-id ${{ env.EIP_ALLOC }} \
+            --allow-reassociation \
             --region ${{ env.AWS_REGION }}
-          
+
           EIP=$(aws ec2 describe-addresses \
             --allocation-ids ${{ env.EIP_ALLOC }} \
             --query "Addresses[0].PublicIp" \
@@ -143,21 +190,18 @@ jobs:
             --region ${{ env.AWS_REGION }})
           echo "EC2_HOST=$EIP" >> $GITHUB_ENV
           echo "Associated EIP: $EIP"
-      
-      # Step 11: Verify deployment
-      - name: Verify deployment
+
+      # Step 12: Final HTTP verify via public EIP
+      - name: Verify deployment via public IP
         run: |
-          echo "Waiting 10 seconds for container to start..."
-          sleep 10
-          
           echo "Testing HTTP endpoint at ${{ env.EC2_HOST }}..."
-          RESPONSE=$(curl -s http://${{ env.EC2_HOST }}/)
-          
+          RESPONSE=$(curl -sf --retry 5 --retry-delay 5 http://${{ env.EC2_HOST }}/ || echo "failed")
+
           if echo "$RESPONSE" | grep -q "${{ env.ENV_NAME }}"; then
             echo "✅ Deployment successful!"
             echo "Response: $RESPONSE"
           else
-            echo "❌ Deployment failed!"
+            echo "❌ Deployment verification failed!"
             echo "Response: $RESPONSE"
             exit 1
           fi
