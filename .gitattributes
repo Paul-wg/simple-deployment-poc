@@ -1,0 +1,17 @@
+# Force LF line endings for all text files (prevents Windows CRLF issues on Linux servers)
+* text=auto eol=lf
+
+# Ensure shell scripts are always LF
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Docker and CI files
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+
+# Keep binary files as-is
+*.png binary
+*.jpg binary
+*.zip binary
