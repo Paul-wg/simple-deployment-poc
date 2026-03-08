@@ -94,7 +94,7 @@ jobs:
       - name: Get EC2 Instance ID
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:name,Values=Nebulas-host" "Name=instance-state-name,Values=running" \
+            --filters "Name=tag:Name,Values=nebulas-dev" "Name=instance-state-name,Values=running" \
             --query "Reservations[0].Instances[0].InstanceId" \
             --output text \
             --region ${{ env.AWS_REGION }})
@@ -121,7 +121,7 @@ jobs:
       - name: Get EIP Allocation ID
         run: |
           EIP_ALLOC=$(aws ec2 describe-addresses \
-            --filters "Name=tag:Name,Values=ai-steven-dev-eip" \
+            --filters "Name=tag:Name,Values=nebulas-dev-eip" \
             --query "Addresses[0].AllocationId" \
             --output text \
             --region ${{ env.AWS_REGION }})
